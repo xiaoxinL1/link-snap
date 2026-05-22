@@ -21,6 +21,12 @@ type Status = 'idle' | 'fetching' | 'extracting' | 'transcribing' | 'summarizing
 const CORS_PROXIES = [
   'https://api.allorigins.win/raw?url=',
   'https://corsproxy.io/?',
+  'https://api.codetabs.com/v1/proxy?quest=',
+]
+
+const VIDEO_CORS_PROXIES = [
+  ...CORS_PROXIES,
+  'https://cors-anywhere.herokuapp.com/',
 ]
 
 const MAX_CONTENT_LENGTH = 4000
@@ -47,19 +53,80 @@ async function fetchWithTimeout(url: string, timeout: number): Promise<Response>
   }
 }
 
-async function fetchHtml(url: string): Promise<string> {
+async function fetchHtml(url: string, minLength: number = 50): Promise<string> {
   for (const proxy of CORS_PROXIES) {
     try {
       const res = await fetchWithTimeout(proxy + encodeURIComponent(url), REQUEST_TIMEOUT)
       if (!res.ok) continue
       const text = await res.text()
-      if (text.length < 50) continue
+      if (text.length < minLength) continue
       return text
     } catch {
       continue
     }
   }
   throw new Error('所有代理服务均不可用，请稍后重试或检查链接是否可访问')
+}
+
+async function fetchVideoHtml(url: string): Promise<string> {
+  for (const proxy of VIDEO_CORS_PROXIES) {
+    try {
+      const res = await fetchWithTimeout(proxy + encodeURIComponent(url), REQUEST_TIMEOUT)
+      if (!res.ok) continue
+      const text = await res.text()
+      if (text.length > 10) return text
+    } catch {
+      continue
+    }
+  }
+  throw new Error('所有代理服务均不可用，请稍后重试或检查链接是否可访问')
+}
+
+async function fetchYoutubeOembed(videoId: string): Promise<string | null> {
+  const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+  try {
+    const res = await fetchWithTimeout(oembedUrl, 10000)
+    if (!res.ok) return null
+    const data = await res.json()
+    const title = data.title || ''
+    const author = data.author_name || ''
+    const desc = ''
+    const html = `<!DOCTYPE html><html><head>
+<meta property="og:title" content="${title.replace(/"/g, '&quot;')}" />
+<meta name="author" content="${author.replace(/"/g, '&quot;')}" />
+<meta property="og:description" content="${desc}" />
+<title>${title}</title></head><body></body></html>`
+    return html
+  } catch {
+    return null
+  }
+}
+
+async function fetchBilibiliApiMeta(bvid: string): Promise<string | null> {
+  const apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const res = await fetchWithTimeout(proxy + encodeURIComponent(apiUrl), 12000)
+      if (!res.ok) continue
+      const json = await res.json()
+      const data = json?.data
+      if (!data) continue
+      const title = data.title || ''
+      const desc = data.desc || ''
+      const owner = data?.owner?.name || ''
+      const tags = (data?.tag || []).map((t: { tag_name?: string }) => t.tag_name).filter(Boolean).join(',')
+      const html = `<!DOCTYPE html><html><head>
+<meta property="og:title" content="${title.replace(/"/g, '&quot;')}" />
+<meta name="description" content="${desc.replace(/"/g, '&quot;')}" />
+<meta name="author" content="${owner.replace(/"/g, '&quot;')}" />
+<meta name="keywords" content="${tags}" />
+<title>${title}</title></head><body></body></html>`
+      return html
+    } catch {
+      continue
+    }
+  }
+  return null
 }
 
 async function callAI(content: string, settings: Settings): Promise<string> {
@@ -134,7 +201,26 @@ export function useSummary() {
 
     try {
       status.value = 'fetching'
-      const html = await fetchHtml(url)
+      let html: string
+
+      if (isVideo) {
+        html = await fetchVideoHtml(url).catch(async () => {
+          const vidInfo = extractVideoId(url)
+          if (!vidInfo) throw new Error('无法识别视频平台')
+
+          if (vidInfo.platform === 'youtube') {
+            const oembedHtml = await fetchYoutubeOembed(vidInfo.id)
+            if (oembedHtml) return oembedHtml
+          } else if (vidInfo.platform === 'bilibili') {
+            const apiHtml = await fetchBilibiliApiMeta(vidInfo.id)
+            if (apiHtml) return apiHtml
+          }
+
+          throw new Error('所有代理服务均不可用，请稍后重试或检查链接是否可访问')
+        })
+      } else {
+        html = await fetchHtml(url)
+      }
 
       status.value = 'extracting'
       let prompt: string
