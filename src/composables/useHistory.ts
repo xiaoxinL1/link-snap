@@ -9,6 +9,8 @@ export interface HistoryItem {
   summary: string
   rawText: string
   type: 'article' | 'video'
+  hasTranscript?: boolean
+  hasVision?: boolean
   createdAt: string
 }
 

@@ -66,6 +66,9 @@ async function copySummary() {
         <span v-if="result.hasTranscript" class="card-transcript-badge">
           📝 含字幕
         </span>
+        <span v-if="result.hasVision" class="card-vision-badge">
+          👁 视觉分析
+        </span>
       </div>
     </div>
 
@@ -181,6 +184,18 @@ async function copySummary() {
   padding: 3px 10px;
   border-radius: 10px;
   background: var(--color-bg);
+  font-weight: 600;
+}
+
+.card-vision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: white;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
   font-weight: 600;
 }
 

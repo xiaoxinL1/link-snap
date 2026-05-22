@@ -5,6 +5,7 @@ import { fetchYoutubeTranscript, fetchBilibiliSubtitle, extractVideoId } from '.
 import { useHistory } from './useHistory'
 import type { Settings } from './useSettings'
 import { parseShareText, type ShareInfo } from '../utils/share'
+import { extractVideoCover } from '../utils/vision'
 
 export interface SummaryResult {
   title: string
@@ -14,9 +15,10 @@ export interface SummaryResult {
   url: string
   type: 'article' | 'video'
   hasTranscript: boolean
+  hasVision: boolean
 }
 
-type Status = 'idle' | 'fetching' | 'extracting' | 'transcribing' | 'summarizing' | 'done'
+type Status = 'idle' | 'fetching' | 'extracting' | 'transcribing' | 'analyzing' | 'summarizing' | 'done'
 
 const CORS_PROXIES = [
   'https://api.allorigins.win/raw?url=',
@@ -171,6 +173,71 @@ async function callAI(content: string, settings: Settings): Promise<string> {
   }
 }
 
+async function callVisionAI(imageBase64: string, textContext: string, settings: Settings): Promise<string> {
+  if (!settings.visionApiKey) {
+    throw new Error('请先在设置中配置视觉 AI 的 API Key（智谱 GLM-4V）')
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 90000)
+
+  try {
+    const prompt = settings.visionPromptTemplate
+      .replace('{video_context}', textContext)
+      .replace('{domain}', extractDomainFromUrlInPrompt(textContext))
+
+    const res = await fetch(settings.visionApiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${settings.visionApiKey}`,
+      },
+      body: JSON.stringify({
+        model: settings.visionModel,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: imageBase64 },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+        max_tokens: settings.maxTokens,
+      }),
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(
+        (err as { error?: { message?: string } }).error?.message ||
+          `视觉 AI 请求失败 (${res.status})，请检查视觉 AI 配置`
+      )
+    }
+
+    const data = await res.json()
+    const text = data.choices?.[0]?.message?.content
+
+    if (!text) throw new Error('视觉 AI 返回结果为空，请重试')
+
+    return text
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function extractDomainFromUrlInPrompt(context: string): string {
+  const match = context.match(/网页来源[：:]\s*(.+)/)
+  return match ? match[1].trim() : ''
+}
+
 export function useSummary() {
   const status = ref<Status>('idle')
   const error = ref<string>('')
@@ -228,6 +295,8 @@ export function useSummary() {
       let extractedDomain: string
       let rawTextContent: string
       let hasTranscript = false
+      let hasVision = false
+      let summary: string
 
       if (isVideo) {
         const meta = extractVideoMeta(html, url)
@@ -292,17 +361,58 @@ export function useSummary() {
           return
         }
 
-        prompt = settings.videoPromptTemplate
-          .replace('{video_context}', rawTextContent)
-          .replace('{domain}', extractedDomain)
-          .replace(
-            '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。',
-            hasTranscript
-              ? '以下为该视频的字幕/文案内容，请基于完整的视频内容生成总结。'
-              : shareMeta
-                ? '以下为该视频的分享文案及元数据信息。分享文案中已包含视频的核心描述和话题标签，请重点依据分享文案进行总结。'
-                : '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。'
-          )
+        if (settings.visionEnabled && settings.visionApiKey) {
+          status.value = 'analyzing'
+          try {
+            const covers = await extractVideoCover(url, html)
+            if (covers.length > 0) {
+              summary = await callVisionAI(covers[0], rawTextContent, settings)
+              hasVision = true
+            } else {
+              status.value = 'summarizing'
+              prompt = settings.videoPromptTemplate
+                .replace('{video_context}', rawTextContent)
+                .replace('{domain}', extractedDomain)
+                .replace(
+                  '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。',
+                  hasTranscript
+                    ? '以下为该视频的字幕/文案内容，请基于完整的视频内容生成总结。'
+                    : shareMeta
+                      ? '以下为该视频的分享文案及元数据信息。分享文案中已包含视频的核心描述和话题标签，请重点依据分享文案进行总结。'
+                      : '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。'
+                )
+              summary = await callAI(prompt, settings)
+            }
+          } catch (visionErr) {
+            status.value = 'summarizing'
+            prompt = settings.videoPromptTemplate
+              .replace('{video_context}', rawTextContent)
+              .replace('{domain}', extractedDomain)
+              .replace(
+                '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。',
+                hasTranscript
+                  ? '以下为该视频的字幕/文案内容，请基于完整的视频内容生成总结。'
+                  : shareMeta
+                    ? '以下为该视频的分享文案及元数据信息。分享文案中已包含视频的核心描述和话题标签，请重点依据分享文案进行总结。'
+                    : '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。'
+              )
+            summary = await callAI(prompt, settings)
+          }
+        } else {
+          status.value = 'summarizing'
+          prompt = settings.videoPromptTemplate
+            .replace('{video_context}', rawTextContent)
+            .replace('{domain}', extractedDomain)
+            .replace(
+              '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。',
+              hasTranscript
+                ? '以下为该视频的字幕/文案内容，请基于完整的视频内容生成总结。'
+                : shareMeta
+                  ? '以下为该视频的分享文案及元数据信息。分享文案中已包含视频的核心描述和话题标签，请重点依据分享文案进行总结。'
+                  : '由于无法获取视频画面和语音内容，请仅根据标题、简介和标签等信息进行分析总结。'
+            )
+          summary = await callAI(prompt, settings)
+        }
       } else {
         const extracted = extractContent(html, url)
         extractedTitle = extracted.title
@@ -324,10 +434,10 @@ export function useSummary() {
           .replace('{title}', extractedTitle)
           .replace('{domain}', extractedDomain)
           .replace('{content}', truncatedText)
-      }
 
-      status.value = 'summarizing'
-      const summary = await callAI(prompt, settings)
+        status.value = 'summarizing'
+        summary = await callAI(prompt, settings)
+      }
 
       status.value = 'done'
       result.value = {
@@ -338,6 +448,7 @@ export function useSummary() {
         url,
         type: isVideo ? 'video' : 'article',
         hasTranscript,
+        hasVision,
       }
 
       addItem({
@@ -347,6 +458,8 @@ export function useSummary() {
         summary,
         rawText: rawTextContent,
         type: isVideo ? 'video' : 'article',
+        hasTranscript,
+        hasVision,
       })
     } catch (e) {
       error.value = e instanceof Error ? e.message : '发生未知错误，请重试'

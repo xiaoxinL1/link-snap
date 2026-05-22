@@ -120,6 +120,66 @@ function getDifferences(): Partial<Settings> {
                 可用占位符：<code>{video_context}</code>、<code>{domain}</code>
               </p>
             </div>
+
+            <div class="setting-divider" />
+
+            <div class="setting-group setting-group--vision-header">
+              <label class="setting-label setting-label--vision">
+                <span>👁 视觉 AI 分析</span>
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    v-model="localSettings.visionEnabled"
+                  />
+                  <span class="toggle-slider" />
+                </label>
+              </label>
+              <p class="setting-hint">启用后，视频总结将通过视觉 AI「观看」封面画面进行分析（需配置下方 API）</p>
+            </div>
+
+            <template v-if="localSettings.visionEnabled">
+              <div class="setting-group">
+                <label class="setting-label">视觉 AI API 密钥</label>
+                <input
+                  v-model="localSettings.visionApiKey"
+                  type="password"
+                  class="setting-input"
+                  placeholder="智谱 GLM-4V API Key..."
+                />
+                <p class="setting-hint">默认使用智谱 GLM-4V，也支持 OpenAI GPT-4o 等兼容格式</p>
+              </div>
+
+              <div class="setting-group">
+                <label class="setting-label">视觉 AI 端点</label>
+                <input
+                  v-model="localSettings.visionApiEndpoint"
+                  type="text"
+                  class="setting-input"
+                />
+              </div>
+
+              <div class="setting-group">
+                <label class="setting-label">视觉 AI 模型</label>
+                <input
+                  v-model="localSettings.visionModel"
+                  type="text"
+                  class="setting-input"
+                />
+              </div>
+
+              <div class="setting-group">
+                <label class="setting-label">视觉分析提示词模板</label>
+                <textarea
+                  v-model="localSettings.visionPromptTemplate"
+                  class="setting-textarea"
+                  rows="6"
+                  placeholder="输入视觉分析提示词模板..."
+                />
+                <p class="setting-hint">
+                  可用占位符：<code>{video_context}</code>、<code>{domain}</code>
+                </p>
+              </div>
+            </template>
           </div>
 
           <div class="modal-footer">
@@ -265,6 +325,68 @@ function getDifferences(): Partial<Settings> {
   border-radius: 4px;
   background: var(--color-bg-hover);
   font-size: 0.8rem;
+}
+
+.setting-divider {
+  height: 1px;
+  background: var(--color-bg);
+  margin: 20px 0 16px;
+}
+
+.setting-group--vision-header {
+  margin-bottom: 14px;
+}
+
+.setting-label--vision {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-bg);
+  border-radius: 24px;
+  transition: 0.3s;
+  box-shadow: var(--shadow-pressed);
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
 }
 
 .modal-footer {

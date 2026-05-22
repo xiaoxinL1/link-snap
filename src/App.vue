@@ -39,7 +39,8 @@ function handleHistorySelect(id: string) {
       rawText: item.rawText,
       url: item.url,
       type: item.type,
-      hasTranscript: false,
+      hasTranscript: item.hasTranscript || false,
+      hasVision: item.hasVision || false,
     }
     currentUrl.value = item.url
     status.value = 'done'
@@ -92,12 +93,13 @@ function handleKeydown(e: KeyboardEvent) {
             <button class="error-dismiss" @click="reset">&times;</button>
           </div>
 
-          <div v-if="status === 'fetching' || status === 'extracting' || status === 'transcribing' || status === 'summarizing'" class="loading-section">
+          <div v-if="status === 'fetching' || status === 'extracting' || status === 'transcribing' || status === 'analyzing' || status === 'summarizing'" class="loading-section">
             <div class="loading-spinner" />
             <p class="loading-text">
               <template v-if="status === 'fetching'">正在获取网页内容…</template>
               <template v-else-if="status === 'extracting'">正在提取正文…</template>
               <template v-else-if="status === 'transcribing'">正在获取视频字幕/文案…</template>
+              <template v-else-if="status === 'analyzing'">正在通过视觉 AI 分析视频画面…</template>
               <template v-else>AI 正在生成总结…</template>
             </p>
             <p class="loading-domain">{{ currentUrl }}</p>
