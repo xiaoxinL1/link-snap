@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onErrorCaptured } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import UrlInput from './components/UrlInput.vue'
 import WelcomeGuide from './components/WelcomeGuide.vue'
@@ -22,6 +22,17 @@ useTheme()
 const showHistory = ref(false)
 const showSettings = ref(false)
 const currentUrl = ref('')
+const fatalError = ref<string | null>(null)
+
+onErrorCaptured((err) => {
+  console.error('LinkSnap caught error:', err)
+  const message = err instanceof Error ? err.message : String(err)
+  if (message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('Load failed')) {
+    return true
+  }
+  fatalError.value = message
+  return false
+})
 
 function handleSubmit(input: string) {
   const shareInfo = parseShareText(input.trim())
@@ -79,6 +90,13 @@ function handleKeydown(e: KeyboardEvent) {
     />
 
     <main class="main-content">
+      <div v-if="fatalError" class="fatal-error-card">
+        <div class="fatal-error-icon">⚠️</div>
+        <h2>应用加载异常</h2>
+        <p>{{ fatalError }}</p>
+        <button class="error-retry-btn" @click="fatalError = null">重试</button>
+      </div>
+
       <div class="content-card">
         <UrlInput @submit="handleSubmit" />
 
@@ -225,6 +243,54 @@ function handleKeydown(e: KeyboardEvent) {
   white-space: nowrap;
   max-width: 500px;
   margin: 0 auto;
+}
+
+.fatal-error-card {
+  text-align: center;
+  padding: 56px 24px;
+  border-radius: 24px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.fatal-error-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+
+.fatal-error-card h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  color: var(--color-text);
+  margin-bottom: 8px;
+}
+
+.fatal-error-card p {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  max-width: 400px;
+  margin: 0 auto 20px;
+  word-break: break-word;
+}
+
+.error-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-retry-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.35);
 }
 
 @media (max-width: 600px) {
